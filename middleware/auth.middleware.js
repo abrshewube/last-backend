@@ -58,14 +58,36 @@ function isRegistralRole(req, res, next) {
 
 // Middleware to check if user is a student and validate grade level
 function checkGradeLevel(req, res, next) {
-  if (req.user.role !== 'student') {
-    return res.status(403).json({ message: 'Access Denied: Student only' });
-  }
+  // if (req.user.role !== 'student') {
+  //   return res.status(403).json({ message: 'Access Denied: Student only' });
+  // }
   // Check if the grade level is valid (between 9 and 12)
   if (req.user.grade < 9 || req.user.grade > 12) {
     return res.status(403).json({ message: 'Invalid Grade Level' });
   }
   next();
 }
+
+// Middleware to check if user is a teacher
+function isTeacher(req, res, next) {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ message: 'Access Denied: Teacher only' });
+  }
+  next();
+}
+
+// Middleware to validate the sections the teacher teaches
+function validateSections(req, res, next) {
+  // Assuming sections are from A to Z
+  const validSections = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+  const { section } = req.body;
+  if (!validSections.includes(section)) {
+    return res.status(400).json({ message: 'Invalid Section' });
+  }
+  next();
+}
+
+module.exports = { authenticateToken, isRegistralRole, isAdmin, isClubAdmin, checkGradeLevel, isTeacher, validateSections ,isTeacher, validateSections};
+
 
 module.exports = { authenticateToken, isRegistralRole, isAdmin, isClubAdmin, checkGradeLevel };

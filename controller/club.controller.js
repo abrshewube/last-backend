@@ -131,29 +131,41 @@ async function editClubDetails(req, res) {
 async function approveDenyStudentMembership(req, res) {
   try {
     const { clubId, userId, action } = req.body;
+    
+    // Find the club and user by their IDs
     const club = await Club.findById(clubId);
     const user = await User.findById(userId);
+    
     if (!club || !user) {
       return res.status(404).json({ message: 'Club or user not found' });
     }
-    // Check if the user is a club admin
-    if (!club.admins.includes(req.user._id)) {
-      return res.status(403).json({ message: 'Access Denied: Only club admins can approve/deny student membership' });
+
+    // Check if the requester is a club admin
+    if (!club.leader.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Access Denied: Only club leaders can approve/deny student membership' });
     }
+
+    // Handle membership approval or denial
     if (action === 'approve') {
-      club.members.push(userId);
+      if (!club.members.includes(userId)) {
+        club.members.push(userId); // Add user to members list if not already a member
+      }
     } else if (action === 'deny') {
-      club.members.pull(userId);
+      club.members.pull(userId); // Remove user from members list if they were denied membership
     } else {
       return res.status(400).json({ message: 'Invalid action' });
     }
+
+    // Save the updated club
     await club.save();
+    
     res.status(200).json({ message: 'Student membership updated successfully', club });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server Error' });
   }
 }
+
 // Get club ID by club admin's ID
 // Get club ID by club admin's ID
 async function getClubIdByAdminId(req, res) {

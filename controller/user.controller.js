@@ -1,8 +1,8 @@
-
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cloudinary = require('cloudinary').v2; // Import Cloudinary
 const User = require('../model/user.model');
+const nodemailer = require('nodemailer');
 
 // Initialize Cloudinary
 cloudinary.config({
@@ -11,14 +11,22 @@ cloudinary.config({
   api_secret: 'bhj1-SWNgJSdjnFZE7Yv0jFqTMs'
 });
 
+// Configure Nodemailer
+const transporter = nodemailer.createTransport({
+  service: 'Gmail',
+  auth: {
+    user: 'abrhamwube1@gmail.com',
+    pass: 'bzpj czdo iynt izgg'
+  }
+});
 
-
-
+// Function to register a new user
 // Function to register a new user
 async function register(req, res) {
   try {
-    const { fullName, username, password, role, grade } = req.body;
-    const profilePicture = req.file; // Uploaded profile picture file
+    const { fullName, username, password, role, grade, email } = req.body;
+    const profilePicture = req.files.profilePicture ? req.files.profilePicture[0] : null;
+    const schoolIdPhoto = req.files.schoolIdPhoto ? req.files.schoolIdPhoto[0] : null;
 
     // Check if the username already exists
     const existingUser = await User.findOne({ username });
@@ -30,38 +38,39 @@ async function register(req, res) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Upload profile picture to Cloudinary
-    const result = await cloudinary.uploader.upload(profilePicture.path);
+    let profilePictureUrl = '';
+    if (profilePicture) {
+      const result = await cloudinary.uploader.upload(profilePicture.path);
+      profilePictureUrl = result.secure_url;
+    }
 
-    // Create user with profile picture URL
+    // Upload school ID photo to Cloudinary
+    let schoolIdPhotoUrl = '';
+    if (schoolIdPhoto) {
+      const result = await cloudinary.uploader.upload(schoolIdPhoto.path);
+      schoolIdPhotoUrl = result.secure_url;
+    }
+
+    // Create user with profile picture and school ID photo URLs
     const user = new User({
       fullName,
       username,
       password: hashedPassword,
       role,
       grade,
-      profilePicture: result.secure_url // URL of the uploaded profile picture
+      email,
+      profilePicture: profilePictureUrl,
+      schoolIdPhoto: schoolIdPhotoUrl
     });
 
     await user.save();
 
-    // Generate JWT token
-    const token = jwt.sign({
-      username: user.username,
-      role: user.role,
-      fullName: user.fullName,
-      _id: user._id,
-      grade: user.grade,
-      profilePicture: user.profilePicture
-    }, 'secret');
-
-    res.status(201).json({ message: 'User registered successfully', token });
+    res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server Error' });
   }
 }
-
-
 
 
 // Function to upload profile picture
@@ -91,7 +100,6 @@ async function uploadProfilePicture(req, res) {
   }
 }
 
-// Function to update user profile
 // Function to update user profile
 async function updateProfile(req, res) {
   try {
@@ -124,7 +132,6 @@ async function updateProfile(req, res) {
   }
 }
 
-
 // Function for user login
 async function login(req, res) {
   try {
@@ -143,14 +150,14 @@ async function login(req, res) {
     }
 
     // Generate JWT token
-const token = jwt.sign({
-  username: user.username,
-  role: user.role,
-  fullName: user.fullName,
-  _id: user._id,
-  grade: user.grade,
-  profilePicture: user.profilePicture
-}, 'secret');
+    const token = jwt.sign({
+      username: user.username,
+      role: user.role,
+      fullName: user.fullName,
+      _id: user._id,
+      grade: user.grade,
+      profilePicture: user.profilePicture
+    }, 'secret');
 
     res.json({ token });
   } catch (error) {
@@ -175,13 +182,13 @@ async function deleteUser(req, res) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-
-res.json({ message: 'User deleted successfully' });
+    res.json({ message: 'User deleted successfully' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server Error' });
   }
 }
+
 // Function to get user ID
 async function getUserId(req, res) {
   try {
@@ -194,6 +201,7 @@ async function getUserId(req, res) {
     res.status(500).json({ message: 'Server Error' });
   }
 }
+
 // Function to get all users (for admin)
 async function getAllUsers(req, res) {
   try {
@@ -235,4 +243,123 @@ async function updateUserRole(req, res) {
   }
 }
 
-module.exports = { register, getAllUsers, updateUserRole ,getUserId,uploadProfilePicture, updateProfile, login, deleteUser };
+// Function to assign a teacher to a specific grade level and section (for admin)
+async function assignTeacher(req, res) {
+  try {
+    // Check if the user making the request is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Admin only' });
+    }
+
+    const { teacherId, grade, section } = req.body;
+
+    // Find teacher by ID and update assigned grade and section
+    const teacher = await User.findByIdAndUpdate(teacherId, { assignedGrade: grade, assignedSection: section }, { new: true });
+
+    if (!teacher) {
+      return res.status(404).json({ message: 'Teacher not found' });
+    }
+
+    res.json({ message: 'Teacher assigned successfully', teacher });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+}
+
+// Function to get all teachers
+async function getAllTeachers(req, res) {
+  try {
+    // Check if the user making the request is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Admin only' });
+    }
+
+    const teachers = await User.find({ role: 'teacher' });
+    res.json(teachers);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+}
+
+// Function to approve registration
+async function approveRegistration(req, res) {
+  try {
+    const { id } = req.params;
+
+    const registration = await User.findById(id);
+    if (!registration) {
+      return res.status(404).json({ message: 'Registration not found' });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Admin Role only' });
+    }
+
+    registration.registrationStatus = 'approved';
+    await registration.save();
+
+    const mailOptions = {
+      from: 'your-email@gmail.com',
+      to: registration.email,
+      subject: 'Registration Approved',
+      text: 'Your registration has been approved. You can now login using your credentials.'
+    };
+    transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: 'Registration approved successfully', registration });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+}
+
+// Function to deny registration
+async function denyRegistration(req, res) {
+  try {
+    const { id } = req.params;
+
+    const registration = await User.findById(id);
+    if (!registration) {
+      return res.status(404).json({ message: 'Registration not found' });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Admin Role only' });
+    }
+
+    registration.registrationStatus = 'denied';
+    await registration.save();
+
+    const mailOptions = {
+      from: 'abrhamwube1@gmail.com',
+      to: registration.email,
+      subject: 'Registration Denied',
+      text: 'Your registration has been denied. Please contact support for more information.'
+    };
+    transporter.sendMail(mailOptions);
+
+    res.status(200).json({ message: 'Registration denied successfully', registration });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+}
+
+// Function to get users with registration status of 'pending'
+async function getPendingRegistrations(req, res) {
+  try {
+    // Check if the user making the request is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Admin only' });
+    }
+
+    const pendingRegistrations = await User.find({ registrationStatus: 'pending' });
+    res.json(pendingRegistrations);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+}
+module.exports = { register, getPendingRegistrations,approveRegistration, denyRegistration, getAllUsers, updateUserRole, getUserId, uploadProfilePicture, updateProfile, login, deleteUser, assignTeacher, getAllTeachers };
